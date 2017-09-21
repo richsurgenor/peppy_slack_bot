@@ -11,9 +11,10 @@ from slackclient import SlackClient
 
 
 #token = os.environ['TOKEN']
-TOKEN = "xoxb-243034904402-tYYxwikeot6EkM5t5455mDO1"
+TOKEN = "xoxb-243034904402-k0tl00nWc6ywFccJFQ5Fm97g"
 BOT_NAME = 'buggs'
 
+current_milli_time = lambda: int(round(time.time() * 1000))
 
 class PythonSlackBot(object):
     def __init__(self, slack_client, update_interval=1/4):
@@ -61,13 +62,13 @@ def get_client():
     return SlackClient(TOKEN)
 
 def process_interpreter(interpreter_handler, slack_server):
-        for owner in interpreter_handler.interpreters.keys():
-            interpreter = interpreter_handler.interpreters[owner]
-            line = interpreter_handler.read_line(owner)
-            chl = interpreter[0]
+        for owner_id in interpreter_handler.interpreters.keys():
+            interpreter = interpreter_handler.interpreters[owner_id]
+            line = interpreter.read_line()
+            chl = interpreter.get_channel()
 
             if not line:
-                line = interpreter_handler.read_err(owner)
+                line = interpreter.read_err()
 
             if line:
                 slack_server.post_message(chl, line)
@@ -77,7 +78,7 @@ def run():
     print ("Starting Bot...")
     sc = get_client()
     time.sleep(1/4)
-    interpreter_handler = PyInterpreters()
+    interpreter_handler = PyInterpreterHandler()
     if sc.rtm_connect():
         slack_server = SlackServer(sc)
         upload("blah", "G72J6HJRJ")
@@ -137,8 +138,8 @@ def run():
 
                                 slack_server.post_message(channel, "Processed.")
 
-            else:
-                print ("Could not connect, please check API token.")
+    else:
+        print ("Could not connect, please check API token.")
 
 
 def download(url):
@@ -171,12 +172,12 @@ def upload(contents, channel):
     print(r.text)
 
 
-class PyInterpreters(object):
+class PyInterpreterHandler(object):
 
     def __init__(self):
         self.user = None
         self.interpreters = {}
-        self.cur_port = 10000
+        self.cur_port = 20000
 
     def spawn_interpreter(self, owner, channel, lines):
         if owner + str(channel) in self.interpreters:
@@ -201,34 +202,52 @@ class PyInterpreters(object):
         for line in lines:
             conn.send(line)
 
-        self.interpreters[owner + str(channel)] = [channel, conn, proc]
+        #self.interpreters[owner + str(channel)] = [channel, conn, proc]
+        self.interpreters[owner + str(channel)] = PyInterpreter(channel, conn, proc)
         return True
 
 
     def send_lines(self, owner_id, lines):
-        conn = self.interpreters[owner_id][1]
+        conn = self.interpreters[owner_id].get_connection()
         for line in lines:
             conn.send(line)
 
-    def get_connection_by_owner(self, owner):
-        if owner in self.interpreters:
-            return self.interpreters[owner][1]
+    def get_connection_by_owner(self, owner_id):
+        if owner_id in self.interpreters:
+            return self.interpreters[owner_id].get_connection()
 
-    def shutdown_interpreter(self, owner):
-        if owner in self.interpreters:
-            self.interpreters[owner][1].close()
-            del self.interpreters[owner]
+    def shutdown_interpreter(self, owner_id):
+        if owner_id in self.interpreters:
+            self.interpreters[owner_id].shutdown()
+            del self.interpreters[owner_id]
 
     def shutdown_interpreters(self):
         for key in self.interpreters.keys():
-            self.interpreters[key][1].close()
+            self.interpreters[key].shutdown()
 
         self.interpreters = {}
 
-    def read_line(self, owner):
+
+
+
+class PyInterpreter(object):
+
+    def __init__(self, channel, conn, proc):
+       self.channel = channel
+       self.conn = conn
+       self.proc = proc
+       self.last_message = current_milli_time()
+
+    def check_abuse():
+        return ( current_milli_time - self.last_message ) > 100
+
+    def shutdown(self):
+        self.conn.close()
+
+    def read_line(self):
         try:
-            if self.interpreters[owner][2].stdout.readable():
-                line = self.interpreters[owner][2].stdout.readline()
+            if self.proc.stdout.readable():
+                line = self.proc.stdout.readline()
                 line = str(line)
                 #print ('LINE READ : ' + line)
         except IOError:
@@ -237,17 +256,23 @@ class PyInterpreters(object):
         return line
 
 
-    def read_err(self, owner):
+    def read_err(self):
         try:
-            if self.interpreters[owner][2].stderr.readable():
-                line = self.interpreters[owner][2].stderr.readline()
+            if self.proc.stderr.readable():
+                line = self.proc.stderr.readline()
         except IOError:
             line = None
 
         return line
 
+    def get_channel(self):
+        return self.channel
 
+    def get_connection(self):
+        return self.conn
 
+    def get_process(self):
+        return self.proc
 
 
 class ChannelDoesNotExist(Exception):
@@ -258,4 +283,4 @@ if __name__ == "__main__":
     try:
         run()
     except Exception as e:
-        print ("CAUGHT EXCEPTION: " + e)
+        print("EXCEPTION CAUGHT : " + str(e))

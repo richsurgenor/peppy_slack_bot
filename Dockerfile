@@ -11,10 +11,17 @@ ENV CONTAINER_TIMEZONE America/Chicago
 WORKDIR /app
 
 # Copy the current directory contents into the container at /app
-ADD . /app
+#ADD . /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/richsurgenor/peppy_slack_bot /app
 
 # Install any needed packages specified in requirements.txt
 RUN pip install -r requirements.txt
+
 
 RUN chmod +x ./startup.sh
 RUN ./startup.sh
