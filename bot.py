@@ -11,7 +11,7 @@ from slackclient import SlackClient
 
 
 #token = os.environ['TOKEN']
-TOKEN = "xoxb-243034904402-k0tl00nWc6ywFccJFQ5Fm97g"
+TOKEN = "xoxb-257826371428-4YU5ZOJcq2Z8yTu08v57YRbR"
 BOT_NAME = 'buggs'
 
 current_milli_time = lambda: int(round(time.time() * 1000))
@@ -19,6 +19,9 @@ current_milli_time = lambda: int(round(time.time() * 1000))
 class PythonSlackBot(object):
     def __init__(self, slack_client, update_interval=1/4):
         self.slack_server = SlackServer(slack_client)
+
+    def is_me(self, username):
+        return self.slack_server.slack_client.api_call("auth.test")["user_id"] in username
 
     def __enter__(self):
         return self
@@ -75,45 +78,35 @@ def process_interpreter(interpreter_handler, slack_server):
 
 
 def run():
-    print ("Starting Bot...")
     sc = get_client()
     time.sleep(1/4)
     interpreter_handler = PyInterpreterHandler()
     if sc.rtm_connect():
         slack_server = SlackServer(sc)
-        upload("blah", "G72J6HJRJ")
         with PythonSlackBot(sc) as bot:
             while True:
                 process_interpreter(interpreter_handler, slack_server)
                 data = slack_server.get_data()
                 #todo detect if snippet is truncated and if so download url
                 if len(data) > 0:
-                    #print (data)
                     for item in data:
-                            #todo implement type logging
+                        #todo implement type logging
                         if 'channel' in item and 'user' in item:
                             channel = item['channel']
                             user = item['user'] # could be used to manage py sessions...? group sessions could be a thing
-                            if 'text' in item and item['text'] == "<@U7510SLBU> kill":
-                                interpreter_handler.shutdown_interpreter(user + str(channel))
-                                slack_server.post_message(channel, "The interpreter instance has been killed")
-                            elif 'text' in item and item['text'] == "<@U7510SLBU> killall":
-                                interpreter_handler.shutdown_interpreters()
-                                slack_server.post_message(channel, "rip interpreters")
-
-                            elif 'bot_id' in item == 'None':
+                            if 'text' in item:
+                                text = item['text'].split()
+                                if bot.is_me(text[0]):
+                                    if text[1] == "kill":
+                                        interpreter_handler.shutdown_interpreter(user + str(channel))
+                                        slack_server.post_message(channel, "The interpreter instance has been killed")
+                                    if text[1] == "killall":
+                                        interpreter_handler.shutdown_interpreters()
+                                        slack_server.post_message(channel, "rip interpreters")
+                            elif 'bot_id' in item == 'None': # This does nothing wth
                                 pass
 
                             elif 'file' in item and 'text' in item and item['file']['filetype'] == 'python':
-
-
-
-                                #if 'preview_is_truncated' in item['file'] and item['file']['preview_is_truncated'] is True:
-                                #    slack_server.post_message(channel, "Truncated snippets are not yet supported.")
-
-                                #py_file_link = str(item['file']['id'])
-                                #py_file_link = dlurl + py_file_link + "/download/-.py"
-                                #py_file = download(py_file_link)
                                 py_file_link = item['file']['url_private_download']
                                 text = download(py_file_link)
                                 if text == None:
@@ -133,11 +126,9 @@ def run():
                                         lines[index] = 'NEWLINE'
 
                                 if not interpreter_handler.spawn_interpreter(user, channel, lines):
-                                    #interpreter_handler.interpreters[user][0] = channel
                                     interpreter_handler.send_lines(user + str(channel), lines)
 
                                 slack_server.post_message(channel, "Processed.")
-
     else:
         print ("Could not connect, please check API token.")
 
